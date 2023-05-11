@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/drivers/gpio.h>
@@ -96,6 +97,8 @@ void main(void)
 		aqs_notify();
 	}
 }
+
+
 
 				
 // -----------------  LED  ----------------- 
