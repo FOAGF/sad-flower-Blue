@@ -26,7 +26,7 @@
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/sensor/ccs811.h>
 
-
+#include "aq_service.h"
 
 #define AQS_THREAD_SIZE 1000
 #define AQS_THREAD_PRIORITY 5
@@ -38,27 +38,28 @@ K_THREAD_DEFINE(aqs_thread_id, AQS_THREAD_SIZE,
                 AQS_THREAD_PRIORITY, 0, 0);
 
 
-static uint8_t aq[10];
-static uint8_t aq_update;
+static uint8_t aq[4];
 
+static void aq_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
+{
+	/* TODO: Handle value */
+}
 
 static ssize_t read_aq(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 		       void *buf, uint16_t len, uint16_t offset)
 {
-	const char *str = "hello";
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, str ,
-				 sizeof(str ) + 1);
+	return bt_gatt_attr_read(conn, attr, buf, len, offset, aq ,
+				 sizeof(aq));
 }
 
 /* Current Time Service Declaration */
 BT_GATT_SERVICE_DEFINE(aqs_cvs,
-	BT_GATT_PRIMARY_SERVICE(BT_UUID_CTS),
-	BT_GATT_CHARACTERISTIC(BT_UUID_CTS_CURRENT_TIME, BT_GATT_CHRC_READ |
+	BT_GATT_PRIMARY_SERVICE(&aqs_service_uuid),
+	BT_GATT_CHARACTERISTIC(&aqs_notify_uuid.uuid, BT_GATT_CHRC_READ |
 			       BT_GATT_CHRC_NOTIFY,
 			       BT_GATT_PERM_READ,
-			       read_aq, write_aq, aq),
-	BT_GATT_CCC(aq_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+			       read_aq, NULL, aq),
+	BT_GATT_CCC(aq_ccc_cfg_changed, BT_GATT_PERM_READ),
 );
 
 
@@ -100,7 +101,6 @@ static int do_fetch(const struct device *dev)
 {
 	struct sensor_value co2, tvoc, voltage, current;
 	int rc = 0;
-	int baseline = -1;
 
 	if (rc == 0) {
 		rc = sensor_sample_fetch(dev);
@@ -124,10 +124,11 @@ static int do_fetch(const struct device *dev)
 		if (rp->status & CCS811_STATUS_ERROR) {
 			printk("ERROR: %02x\n", rp->error);
 		}
-		aq[0] = (uint8_t) (co2.val1 >> 0);
-		aq[1] = (uint8_t) (co2.val1 >> 1);
-		aq[2] = (uint8_t) (co2.val1 >> 2);
-		aq[3] = (uint8_t) (co2.val1 >> 3);
+		
+		aq[3] = (uint8_t) (co2.val1 >> 0);
+		aq[2] = (uint8_t) (co2.val1 >> 8);
+		aq[1] = (uint8_t) (co2.val1 >> 16);
+		aq[0] = (uint8_t) (co2.val1 >> 24);
 	}
 	return rc;
 }
@@ -144,7 +145,6 @@ static void fetch_value(const struct device *dev)
 		printk("Timed fetch got stale data\n");
 	} else {
 		printk("Timed fetch failed: %d\n", rc);
-		break;
 	}
 }
 
