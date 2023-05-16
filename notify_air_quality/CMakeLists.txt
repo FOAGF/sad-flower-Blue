@@ -7,4 +7,5 @@ project(peripheral)
 target_sources(app PRIVATE
   src/main.c
   src/aq_service.c
+  src/blinky_led.c
 )
