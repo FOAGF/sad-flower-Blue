@@ -38,7 +38,7 @@ K_THREAD_DEFINE(aqs_thread_id, AQS_THREAD_SIZE,
                 AQS_THREAD_PRIORITY, 0, 0);
 
 
-static uint8_t aq[4];
+static uint8_t aq[2];
 
 static void aq_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
@@ -125,10 +125,8 @@ static int do_fetch(const struct device *dev)
 			printk("ERROR: %02x\n", rp->error);
 		}
 		
-		aq[3] = (uint8_t) (co2.val1 >> 0);
-		aq[2] = (uint8_t) (co2.val1 >> 8);
-		aq[1] = (uint8_t) (co2.val1 >> 16);
-		aq[0] = (uint8_t) (co2.val1 >> 24);
+		aq[0] = (uint8_t) (co2.val1 >> 0);
+		aq[1] = (uint8_t) (co2.val1 >> 8);
 	}
 	return rc;
 }
