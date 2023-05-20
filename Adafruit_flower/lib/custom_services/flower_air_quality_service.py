@@ -26,7 +26,7 @@ class FlowerAirQualityService(Service):
         initial_value=400,
     )
 
-    vtocppb = Uint16Characteristic(
+    tvocppb = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0002-C55E40110002"),
         properties=(Characteristic.READ),
         initial_value=0,

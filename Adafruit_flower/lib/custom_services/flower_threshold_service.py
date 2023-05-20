@@ -2,7 +2,7 @@
 `custom_service.flower_threshold_service`
 ================================================================================
 
-BLE control of CSSE4011 flower  threshold values, these includes CO2 and VTOC
+BLE control of CSSE4011 flower  threshold values, these includes CO2 and TVOC
 min/max values, how many air quality levels there are, and how the levels are
 calculated.
 
@@ -32,13 +32,13 @@ class FlowerThresholdService(Service):
         initial_value=2000,
     )
 
-    minVTOC = Uint16Characteristic(
+    minTVOC = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0001-C55E40110003"),
         properties=(Characteristic.READ | Characteristic.WRITE),
         initial_value=0,
     )
 
-    maxVTOC = Uint16Characteristic(
+    maxTVOC = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0001-C55E40110004"),
         properties=(Characteristic.READ | Characteristic.WRITE),
         initial_value=200,
