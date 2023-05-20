@@ -12,9 +12,14 @@ from adafruit_ble.services import Service
 from adafruit_ble.characteristics import Characteristic
 from adafruit_ble.characteristics.int import Uint16Characteristic
 
+from adafruit_ble_adafruit.adafruit_service import AdafruitServerAdvertisement
+from adafruit_ble_adafruit.temperature_service import TemperatureService
+
 from binascii import unhexlify
 
 from adafruit_crickit import crickit
+
+from custom_services.flower_threshold_service import FlowerThresholdService
 
 class Flower:
 
@@ -25,6 +30,9 @@ class Flower:
         ss = crickit.seesaw
         ss.pin_mode(crickit.SIGNAL1, ss.OUTPUT)
         ss.pin_mode(crickit.SIGNAL2, ss.OUTPUT)
+        self.co2min = 400
+        self.co2max = 2000
+        self.num_intensity_levels = 10
 
     def change_colour(self, val):
         # On when val between 4 and 8, off otherwise
@@ -32,18 +40,18 @@ class Flower:
         # On when val greater than 7, off otherwise
         crickit.seesaw.digital_write(self._output_2, val >= 7)
 
-    def update(self, air_quality):
+    def update(self, co2ppm):
         """
         Updates the flowers appearence based on the current air quality level,
         air quality should be between 0 and 10 inclusive, lower the better.
         """
-        air_quality = int(air_quality)
+        air_quality = self.co2Intensity(co2ppm)
         if (air_quality > 10 or air_quality < 0):
             return
 
         self.change_colour(air_quality)
 
-        target = 135 - air_quality * 5
+        target = 135 - air_quality * (50 // self.num_intensity_levels)
         self._servo.move(target)
 
     def open_and_close(self):
@@ -53,6 +61,20 @@ class Flower:
         """
         for i in list(range(0,10)) + list(range(10, -1, -1)):
             self.update(i)
+
+    def co2Intensity(self, co2ppm):
+        """
+        Converts a co2 concentration to an intensity level between 0 and 10 inclusive.
+
+        :param co2ppm: co2 concentration in ppm (parts per million)
+        :return: Intensity level from 0 to 10 inclusive
+        """
+
+        if co2ppm < self.co2min:
+            return 0
+        elif co2ppm > self.co2max:
+            return self.num_intensity_levels
+        return floor(self.num_intensity_levels * (co2ppm - self.co2min) / (self.co2max - self.co2min))
 
 
 class ServoMotor:
@@ -83,9 +105,7 @@ class AirQualityService(Service):
     )
     """Air Quality: co2ppm, ranges from 400-8192ppm"""
 
-########### Helper funcitons ##############
 
-#ONLY for int inputs
 def range_list(start, end):
     if (start < end):
         return range(start, end)
@@ -93,29 +113,30 @@ def range_list(start, end):
         return range(start, end, -1)
 
 
-def co2Intensity(co2ppm):
+
+def current_time_ms():
     """
-    Converts a co2 concentration to an intensity level between 0 and 10 inclusive.
+    Gets the current time since start up in milliseconds.
 
-    :param co2ppm: co2 concentration in ppm (parts per million)
-    :return: Intensity level from 0 to 10 inclusive
+    :return: number of milliseconds since start up
     """
+    return time.monotonic_ns() // 1000000
 
-    CO2MIN = 400
-    CO2MAX = 2000
-    NUM_LEVLES = 10
 
-    if co2ppm < CO2MIN:
-        return 0
-    elif co2ppm > CO2MAX:
-        return NUM_LEVLES
-    return floor(NUM_LEVLES * (co2ppm - CO2MIN) / (CO2MAX - CO2MIN))
+def time_elapsed_since(start_time, s):
+    """
+    checks whether s seconds have elapsed since a start_time.
+    """
+    return current_time_ms() - start_time > (s * 1000)
 
 
 # BEGIN CODE
 servo = ServoMotor(crickit.servo_1)
 flower = Flower(servo)
-flower.open_and_close()
+
+# open and close flower 3 times, just so that we know it works
+for i in range(3):
+    flower.open_and_close()
 
 TARGET = 'C8:AE:54:01:AC:A9'
 target_address = TARGET.split(":")
@@ -123,36 +144,69 @@ target_address.reverse()
 target_address = unhexlify(''.join(target_address))
 
 ble = adafruit_ble.BLERadio()
-if ble.connected:
-    for c in ble.connections:
-        c.disconnect()
+ble.name = "CSSE4011 FLOWER"
 
 client = None
 
+threshold_svc = FlowerThresholdService()
+threshold_last_update = 0
+
+adv = ProvideServicesAdvertisement(threshold_svc)
+
+
+last_advertisement = 0
+last_air_quality_read = 0
+
 while True:
+
+    # Advertise when not connected.
+    if not ble.connected and time_elapsed_since(last_advertisement, 10):
+        print("start advertising")
+        adv_start_time = current_time_ms()
+        ble.start_advertising(adv)
+        while not ble.connected and not time_elapsed_since(adv_start_time, 5):
+            pass
+        if not ble.connected:
+            print("Failed to find base station")
+        ble.stop_advertising()
+        print("stop advertising")
+        last_advertisement = current_time_ms()
+
+
     if not client:
-        print("Trying to connect to BLE Server...")
-        for adv in ble.start_scan(ProvideServicesAdvertisement, timeout=10):
-            if adv.address.address_bytes == target_address:
+        print("scanning for air quality sensor")
+        for adv in ble.start_scan(timeout=1):
+            if not client and adv.address.address_bytes == target_address:
                 client = ble.connect(adv)
-                print("connected")
+                print("connected AQS")
+            if client:
                 break
         ble.stop_scan()
+        print("stopped scanning")
 
-    if client and client.connected:
-        if AirQualityService in client:
-            try:
+
+    if client and client.connected and time_elapsed_since(last_air_quality_read, 1):
+        try:
+            if AirQualityService in client:
                 service = client[AirQualityService]
-            except:
-                print("Not connected or service unavailable")
-                client = None
-            else:
                 air_quality_value = service.air_quality
-                print("Air Quality:", air_quality_value, co2Intensity(air_quality_value))
-                flower.air_quality(co2Intensity(air_quality_value))
+                print("Min:", flower.co2min)
+                print("Air Quality:", air_quality_value, flower.co2Intensity(air_quality_value))
+                flower.update(air_quality_value)
+        except:
+            print("Not connected or service unavailable")
+            client = None
+
 
     if client and not client.connected:
         client = None
+
+
+    if time_elapsed_since(threshold_last_update, 1):
+        flower.co2min = threshold_svc.minCO2
+        flower.co2max = threshold_svc.maxCO2
+        threshold_last_update = current_time_ms()
+
 
     time.sleep(0.5)
 
