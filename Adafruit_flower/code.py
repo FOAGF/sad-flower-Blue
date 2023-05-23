@@ -34,6 +34,7 @@ class Flower:
         self.current_co2 = 400
         self.current_tvoc = 0
         self.current_level = 0
+        self.calculation_mode = 0
 
         self._servo = servo
         self._output_1 = crickit.SIGNAL1
@@ -48,27 +49,51 @@ class Flower:
         # On when val greater than 7, off otherwise
         crickit.seesaw.digital_write(self._output_2, val >= 7)
 
-    def update(self, co2ppm):
+    def update(self):
         """
         Updates the flowers appearence based on the current air quality level,
         air quality should be between 0 and 10 inclusive, lower the better.
+
+        The air qulaity level is calculated based on the current calculation_mode,
+        0: Take the maximum intensity of co2 and tvoc levels
+        1: Take the average intensity of co2 and tvoc levels
+        2: Add the co2 and tvoc levels
+        3: Hold, keep the same value as last time (update manually)
         """
-        air_quality = self.co2Intensity(co2ppm)
-        if (air_quality > 10 or air_quality < 0):
+        co2_intensity = self.co2Intensity(self.current_co2)
+        tvoc_intensity  = self.tvocIntensity(self.current_tvoc)
+        if self.calculation_mode == 0:
+            self.current_level = max(co2_intensity, tvoc_intensity)
+        elif self.calculation_mode == 1:
+            self.current_level = (co2_intensity + tvoc_intensity) // 2
+        elif self.calculation_mode == 2:
+            self.current_level = (co2_intensity + tvoc_intensity)
+        elif self.calculation_mode == 3:
+            pass # Hold the current value
+        else:
+            print("Invalid mode")
             return
 
-        self.change_colour(air_quality)
+        # keep intensity level within bounds
+        self.current_level = min(max(self.calculation_mode, 0), self.num_intensity_levels)
 
-        target = 135 - air_quality * (50 // self.num_intensity_levels)
+        self.change_colour(self.current_level)
+
+        target = 135 - self.current_level * (50 // self.num_intensity_levels)
         self._servo.move(target)
+
 
     def open_and_close(self):
         """
         Test function that opens and closes the flower by cycling
         through intensity levels, from 0 to 10 then back from 10 to 0.
         """
+        mode = self.calculation_mode
+        self.calculation_mode = 3
         for i in list(range(0,10)) + list(range(10, -1, -1)):
-            self.update(i)
+            self.current_level = i
+            self.update()
+        self.calculation_mode = mode
 
     def co2Intensity(self, co2ppm):
         """
@@ -225,7 +250,9 @@ while True:
                 tvoc_value = service.air_quality_tvoc
                 print("Co2:", c02_value)
                 print("TVOC:", tvoc_value)
-                flower.update(c02_value)
+                flower.current_co2 = c02_value
+                flower.current_tvoc = tvoc_value
+                flower.update()
         except:
             print("Not connected or service unavailable")
             client = None
