@@ -41,7 +41,7 @@ class FlowerThresholdService(Service):
     maxTVOC = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0001-C55E40110004"),
         properties=(Characteristic.READ | Characteristic.WRITE),
-        initial_value=200,
+        initial_value=2000,
     )
 
     num_levels = Uint8Characteristic(

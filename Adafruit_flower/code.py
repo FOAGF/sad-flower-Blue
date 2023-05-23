@@ -20,19 +20,27 @@ from binascii import unhexlify
 from adafruit_crickit import crickit
 
 from custom_services.flower_threshold_service import FlowerThresholdService
+from custom_services.flower_air_quality_service import FlowerAirQualityService
+
 
 class Flower:
 
     def __init__(self, servo):
+        self.co2min = 400
+        self.co2max = 2000
+        self.tvocmin = 0
+        self.tvocmax = 2000
+        self.num_intensity_levels = 10
+        self.current_co2 = 400
+        self.current_tvoc = 0
+        self.current_level = 0
+
         self._servo = servo
         self._output_1 = crickit.SIGNAL1
         self._output_2 = crickit.SIGNAL2
         ss = crickit.seesaw
         ss.pin_mode(crickit.SIGNAL1, ss.OUTPUT)
         ss.pin_mode(crickit.SIGNAL2, ss.OUTPUT)
-        self.co2min = 400
-        self.co2max = 2000
-        self.num_intensity_levels = 10
 
     def change_colour(self, val):
         # On when val between 4 and 8, off otherwise
@@ -98,12 +106,19 @@ class AirQualityService(Service):
     """Custom air quality sensor value service."""
 
     uuid = VendorUUID("C55E4011-C55E-4011-0000-C55E40110001")
-    air_quality = Uint16Characteristic(
+    air_quality_co2 = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0000-C55E40110002"),
         properties=(Characteristic.READ | Characteristic.NOTIFY),
         write_perm=Attribute.NO_ACCESS,
     )
-    """Air Quality: co2ppm, ranges from 400-8192ppm"""
+    """Air Quality: co2ppm, ranges from 400-32768ppm"""
+
+    air_quality_tvoc = Uint16Characteristic(
+        uuid=VendorUUID("C55E4011-C55E-4011-0000-C55E40110003"),
+        properties=(Characteristic.READ | Characteristic.NOTIFY),
+        write_perm=Attribute.NO_ACCESS,
+    )
+    """Air Quality: tvocppb, ranges from 0-29206ppb"""
 
 
 def range_list(start, end):
@@ -151,6 +166,9 @@ client = None
 threshold_svc = FlowerThresholdService()
 threshold_last_update = 0
 
+air_quality_svc = AirQualityService()
+flower_air_quality_last_update = 0
+
 adv = ProvideServicesAdvertisement(threshold_svc)
 
 
@@ -185,17 +203,19 @@ while True:
         print("stopped scanning")
 
 
-    if client and client.connected and time_elapsed_since(last_air_quality_read, 1):
+    if client and client.connected and time_elapsed_since(last_air_quality_read, 0.5):
         try:
             if AirQualityService in client:
                 service = client[AirQualityService]
-                air_quality_value = service.air_quality
-                print("Min:", flower.co2min)
-                print("Air Quality:", air_quality_value, flower.co2Intensity(air_quality_value))
-                flower.update(air_quality_value)
+                c02_value = service.air_quality_co2
+                tvoc_value = service.air_quality_tvoc
+                print("Co2:", c02_value)
+                print("TVOC:", tvoc_value)
+                flower.update(c02_value)
         except:
             print("Not connected or service unavailable")
             client = None
+        last_air_quality_read = current_time_ms()
 
 
     if client and not client.connected:
@@ -207,7 +227,13 @@ while True:
         flower.co2max = threshold_svc.maxCO2
         threshold_last_update = current_time_ms()
 
+    if time_elapsed_since(flower_air_quality_last_update, 1):
+        air_quality_svc.co2 = flower.current_co2
+        air_quality_svc.tvoc = flower.current_tvoc
+        flower.co2max = threshold_svc.maxCO2
+        flower_air_quality_last_update = current_time_ms()
 
-    time.sleep(0.5)
+
+    time.sleep(0.01)
 
 
