@@ -38,7 +38,7 @@ K_THREAD_DEFINE(aqs_thread_id, AQS_THREAD_SIZE,
                 AQS_THREAD_PRIORITY, 0, 0);
 
 
-static uint8_t aq[2];
+static uint8_t aq[4];
 
 static void aq_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
@@ -48,17 +48,22 @@ static void aq_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 static ssize_t read_aq(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 		       void *buf, uint16_t len, uint16_t offset)
 {
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, aq ,
-				 sizeof(aq));
+	uint8_t *data = (uint8_t *) attr->user_data;
+	return bt_gatt_attr_read(conn, attr, buf, len, offset, data ,
+				 sizeof(aq)/2);
 }
 
 /* Current Time Service Declaration */
 BT_GATT_SERVICE_DEFINE(aqs_cvs,
 	BT_GATT_PRIMARY_SERVICE(&aqs_service_uuid),
-	BT_GATT_CHARACTERISTIC(&aqs_notify_uuid.uuid, BT_GATT_CHRC_READ |
-			       BT_GATT_CHRC_NOTIFY,
+	BT_GATT_CHARACTERISTIC(&aqs_co2.uuid,
+				   BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
 			       BT_GATT_PERM_READ,
-			       read_aq, NULL, aq),
+			       read_aq, NULL, &aq[0]),	
+	BT_GATT_CHARACTERISTIC(&aqs_tvoc.uuid, 
+				   BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+			       BT_GATT_PERM_READ,
+			       read_aq, NULL, &aq[2]),
 	BT_GATT_CCC(aq_ccc_cfg_changed, BT_GATT_PERM_READ),
 );
 
@@ -126,7 +131,9 @@ static int do_fetch(const struct device *dev)
 		}
 		
 		aq[0] = (uint8_t) (co2.val1 >> 0);
-		aq[1] = (uint8_t) (co2.val1 >> 8);
+		aq[1] = (uint8_t) (co2.val1 >> 8);		
+		aq[2] = (uint8_t) (tvoc.val1 >> 0);
+		aq[3] = (uint8_t) (tvoc.val1 >> 8);
 	}
 	return rc;
 }
