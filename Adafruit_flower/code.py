@@ -84,6 +84,20 @@ class Flower:
             return self.num_intensity_levels
         return floor(self.num_intensity_levels * (co2ppm - self.co2min) / (self.co2max - self.co2min))
 
+    def tvocIntensity(self, tvocppb):
+        """
+        Converts a TVOC concentration to an intensity level between 0 and 10 inclusive.
+
+        :param tvocppb: tvoc concentration in ppb (parts per billion)
+        :return: Intensity level from 0 to 10 inclusive
+        """
+
+        if tvocppb < self.tvocmin:
+            return 0
+        elif tvocppb > self.tvocmax:
+            return self.num_intensity_levels
+        return floor(self.num_intensity_levels * (tvocppb - self.tvocmin) / (self.tvocmax - self.tvocmin))
+
 
 class ServoMotor:
 
