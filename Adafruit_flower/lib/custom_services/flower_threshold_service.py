@@ -10,7 +10,7 @@ calculated.
 """
 
 from adafruit_ble.characteristics import Characteristic
-from adafruit_ble.characteristics.int import Uint8Characteristic, Uint16Characteristic
+from adafruit_ble.characteristics.int import Uint16Characteristic
 from adafruit_ble.services import Service
 from adafruit_ble.uuid import VendorUUID
 
@@ -44,13 +44,13 @@ class FlowerThresholdService(Service):
         initial_value=2000,
     )
 
-    num_levels = Uint8Characteristic(
+    num_levels = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0001-C55E40110005"),
         properties=(Characteristic.READ | Characteristic.WRITE),
-        initial_value=0,
+        initial_value=10,
     )
 
-    mode = Uint8Characteristic(
+    mode = Uint16Characteristic(
         uuid=VendorUUID("C55E4011-C55E-4011-0001-C55E40110006"),
         properties=(Characteristic.READ | Characteristic.WRITE),
         initial_value=0,

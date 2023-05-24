@@ -38,4 +38,6 @@ class FlowerAirQualityService(Service):
         initial_value=0,
     )
 
+    last_current_level = 0
+
 
