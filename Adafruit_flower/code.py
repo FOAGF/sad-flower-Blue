@@ -3,6 +3,8 @@ import sys
 import time
 from math import floor
 
+import _bleio
+
 import adafruit_ble
 from adafruit_ble.advertising import Advertisement
 from adafruit_ble.advertising.standard import ProvideServicesAdvertisement
@@ -75,7 +77,7 @@ class Flower:
             return
 
         # keep intensity level within bounds
-        self.current_level = min(max(self.calculation_mode, 0), self.num_intensity_levels)
+        self.current_level = min(max(self.current_level, 0), self.num_intensity_levels)
 
         self.change_colour(self.current_level)
 
@@ -161,11 +163,7 @@ class AirQualityService(Service):
 
 
 def range_list(start, end):
-    if (start < end):
-        return range(start, end)
-    else:
-        return range(start, end, -1)
-
+    return range(start, end) if start < end else range(start, end, -1)
 
 
 def current_time_ms():
@@ -184,13 +182,47 @@ def time_elapsed_since(start_time, s):
     return current_time_ms() - start_time > (s * 1000)
 
 
+def scan_and_connect_to_sensor():
+    client = None
+    for adv in ble.start_scan(timeout=1):
+        if adv.address.address_bytes == target_address:
+            client = ble.connect(adv)
+            print("Connected to air quality sensor")
+        if client:
+            break
+        time.sleep(0.01)
+    ble.stop_scan()
+    return client
+
+
+def advertise_for_base_station():
+    print("start advertising")
+    base_station = None
+    time.sleep(0.2)
+    adv_start_time = current_time_ms()
+    # gui cant connect while actually advertiseing, or scanning,
+    # so do nothing for a while
+    #ble.start_advertising(adv, interval=0.1)
+    while not ble.connected and not time_elapsed_since(adv_start_time, 5):
+        pass
+    if not ble.connected:
+        print("Failed to find base station")
+    else:
+        print("Found base station")
+        base_station = ble.connections[0]
+    #ble.stop_advertising()
+    print("stop advertising")
+    last_advertisement = current_time_ms()
+    return base_station
+
+
 # BEGIN CODE
 servo = ServoMotor(crickit.servo_1)
 flower = Flower(servo)
 
 # open and close flower 3 times, just so that we know it works
-for i in range(3):
-    flower.open_and_close()
+#for i in range(3):
+#    flower.open_and_close()
 
 TARGET = 'C8:AE:54:01:AC:A9'
 target_address = TARGET.split(":")
@@ -201,77 +233,87 @@ ble = adafruit_ble.BLERadio()
 ble.name = "CSSE4011 FLOWER"
 
 client = None
+base_station = None
 
 threshold_svc = FlowerThresholdService()
 threshold_last_update = 0
 
-air_quality_svc = AirQualityService()
+air_quality_svc = FlowerAirQualityService()
 flower_air_quality_last_update = 0
 
-adv = ProvideServicesAdvertisement(threshold_svc)
+adv = ProvideServicesAdvertisement(threshold_svc, air_quality_svc)
 
 
 last_advertisement = 0
 last_air_quality_read = 0
 
+
 while True:
 
     # Advertise when not connected.
-    if not ble.connected and time_elapsed_since(last_advertisement, 10):
-        print("start advertising")
-        adv_start_time = current_time_ms()
-        ble.start_advertising(adv)
-        while not ble.connected and not time_elapsed_since(adv_start_time, 5):
-            pass
-        if not ble.connected:
-            print("Failed to find base station")
-        ble.stop_advertising()
-        print("stop advertising")
+    if ((not base_station or not base_station.connected)
+        and time_elapsed_since(last_advertisement, 10)):
+        # Cannot advertise while connected to another device
+        client = None
+        while ble.connected:
+            for connection in ble.connections:
+                connection.disconnect()
+        base_station = advertise_for_base_station()
         last_advertisement = current_time_ms()
 
 
-    if not client:
-        print("scanning for air quality sensor")
-        for adv in ble.start_scan(timeout=1):
-            if not client and adv.address.address_bytes == target_address:
-                client = ble.connect(adv)
-                print("connected AQS")
-            if client:
-                break
-        ble.stop_scan()
-        print("stopped scanning")
+    if not client or not client.connected:
+        try:
+            print("Scanning")
+            client = scan_and_connect_to_sensor()
+        except MemoryError:
+            print("Scan allocated too much memory")
 
 
     if client and client.connected and time_elapsed_since(last_air_quality_read, 0.5):
         try:
             if AirQualityService in client:
                 service = client[AirQualityService]
-                c02_value = service.air_quality_co2
+                co2_value = service.air_quality_co2
                 tvoc_value = service.air_quality_tvoc
-                print("Co2:", c02_value)
-                print("TVOC:", tvoc_value)
-                flower.current_co2 = c02_value
+                flower.current_co2 = co2_value
                 flower.current_tvoc = tvoc_value
+                print("Air Quality: Co2 =", co2_value, "| TVOC =", tvoc_value)
                 flower.update()
-        except:
-            print("Not connected or service unavailable")
+        except ConnectionError:
+            print("Not connected")
+            client.disconnect()
             client = None
+        except AttributeError:
+            print("Service not available, disconnecting")
+            client.disconnect()
+            client = None
+
         last_air_quality_read = current_time_ms()
-
-
-    if client and not client.connected:
-        client = None
 
 
     if time_elapsed_since(threshold_last_update, 1):
         flower.co2min = threshold_svc.minCO2
         flower.co2max = threshold_svc.maxCO2
+        flower.tvocmin = threshold_svc.minTVOC
+        flower.tvocmax = threshold_svc.maxTVOC
+        flower.num_intensity_levels = threshold_svc.num_levels
+        flower.calculation_mode = threshold_svc.mode
         threshold_last_update = current_time_ms()
 
     if time_elapsed_since(flower_air_quality_last_update, 1):
-        air_quality_svc.co2 = flower.current_co2
-        air_quality_svc.tvoc = flower.current_tvoc
-        flower.co2max = threshold_svc.maxCO2
+        air_quality_svc.co2ppm = flower.current_co2
+        air_quality_svc.tvocppb = flower.current_tvoc
+        if air_quality_svc.last_current_level != air_quality_svc.current_level:
+            # value was written, change mode to manual and set flower level
+            flower.calculation_mode = 3
+            threshold_svc.mode = 3
+            flower.current_level = air_quality_svc.current_level
+        else:
+            # set value to be read
+            air_quality_svc.current_level = flower.current_level
+        air_quality_svc.last_current_level = flower.current_level
+
         flower_air_quality_last_update = current_time_ms()
 
 
