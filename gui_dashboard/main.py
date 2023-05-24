@@ -2,6 +2,8 @@ import tkinter as tk
 import simplepyble
 from threading import Thread
 
+import time
+
 
 def gen_flower_uuid(srv, cha):
     return f'c55e4011-c55e-4011-00{srv:02}-c55e401100{cha:02}'
@@ -44,7 +46,6 @@ class ParameterRead:
                 val = int.from_bytes(val, byteorder="little")
                 self.rvalue.set(str(val))
 
-
 class ParameterWrite(ParameterRead):
     def __init__(self, root, peripheral, s_uuid, c_uuid):
         super().__init__(root, peripheral, s_uuid, c_uuid)
@@ -80,7 +81,6 @@ class ParameterFrame:
         button.grid(row=self.current_row, column=3, padx=5, pady=5)
 
         self.parameters.append(param)
-
         self.current_row += 1
 
     def add_read(self, name, s_uuid, c_uuid):
@@ -109,6 +109,9 @@ class RemoteGUI(tk.Tk):
 
         self.flower_peripheral = flower_peripheral
 
+        # Parameters
+        self.mode = tk.StringVar(None, "Max")
+
         # GUI elements
         self.co2_frame = ParameterFrame(self, flower_peripheral, "CO2 Levels")
         self.co2_frame.add_write("Min CO2:", FLOWER_THRESHOLD_SRV, MIN_CO2_UUID)
@@ -120,7 +123,7 @@ class RemoteGUI(tk.Tk):
         self.tvoc_frame.add_write("Max TVOC:", FLOWER_THRESHOLD_SRV, MAX_TVOC_UUID)
         self.tvoc_frame.add_read("Current TVOC:", FLOWER_AIR_QUALITY_SRV, CURRENT_TVOC_UUID)
 
-        self.label_frame = ParameterFrame(self, flower_peripheral, "TVOC Levels")
+        self.label_frame = ParameterFrame(self, flower_peripheral, "Intensity Levels")
         self.label_frame.add_write("Current Level:", FLOWER_AIR_QUALITY_SRV, CURRENT_LEVEL_UUID)
         self.label_frame.add_write("Number of Levels:", FLOWER_THRESHOLD_SRV, NUM_LEVELS_UUID)
 
@@ -171,7 +174,7 @@ flower_peripheral.connect()
 # Create the Tkinter root window
 root = RemoteGUI(flower_peripheral)
 
-# Set up periodic parameter updates
+# Update parameters every second
 root.after(1000, root.parameter_update)
 
 # Start the Tkinter event loop
