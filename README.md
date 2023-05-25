@@ -1,2 +1,2 @@
 # sad-flower-Blue
-Indoor Air quality Mechanical Plant Avator
+see https://github.com/FOAGF/sad-flower-Blue/wiki
