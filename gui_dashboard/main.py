@@ -1,8 +1,30 @@
 import tkinter as tk
 import simplepyble
 from threading import Thread
+import influxdb_client, os, time
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+import sys
 
-import time
+
+def upload_info(co2_level, tvoc_level):
+    token = "Ruz_SuAppYsQoWbQXywCG76iLggph1aP1zq6vJZzsNBI-BNNMAE9b8pRIaLScyxoEOlQv7KJR8E7iAdzwj5OgQ=="
+    org = "UQCSSE4011_114"
+    url = "https://us-east-1-1.aws.cloud2.influxdata.com"
+    write_client = influxdb_client.InfluxDBClient(url=url, token=token, org=org)
+
+    bucket = "ProjectData"
+
+    write_api = write_client.write_api(write_options=SYNCHRONOUS)
+
+    point = (
+        Point("Output")
+        .tag("SensorOutput", "Thingy52"))
+    point.field("CO2", int(co2_level))
+    point.field("TVOC", int(tvoc_level))
+    write_api.write(bucket=bucket, org=org, record=point)
+    time.sleep(0.1)
+    print("UPLOAD COMPLETE")
 
 
 def gen_flower_uuid(srv, cha):
@@ -109,19 +131,18 @@ class RemoteGUI(tk.Tk):
 
         self.flower_peripheral = flower_peripheral
 
-        # Parameters
-        self.mode = tk.StringVar(None, "Max")
-
         # GUI elements
         self.co2_frame = ParameterFrame(self, flower_peripheral, "CO2 Levels")
         self.co2_frame.add_write("Min CO2:", FLOWER_THRESHOLD_SRV, MIN_CO2_UUID)
         self.co2_frame.add_write("Max CO2:", FLOWER_THRESHOLD_SRV, MAX_CO2_UUID)
         self.co2_frame.add_read("Current CO2:", FLOWER_AIR_QUALITY_SRV, CURRENT_CO2_UUID)
+        self.co2_current = self.co2_frame.parameters[-1].rvalue
 
         self.tvoc_frame = ParameterFrame(self, flower_peripheral, "TVOC Levels")
         self.tvoc_frame.add_write("Min TVOC:", FLOWER_THRESHOLD_SRV, MIN_TVOC_UUID)
         self.tvoc_frame.add_write("Max TVOC:", FLOWER_THRESHOLD_SRV, MAX_TVOC_UUID)
         self.tvoc_frame.add_read("Current TVOC:", FLOWER_AIR_QUALITY_SRV, CURRENT_TVOC_UUID)
+        self.tvoc_current = self.tvoc_frame.parameters[-1].rvalue
 
         self.label_frame = ParameterFrame(self, flower_peripheral, "Intensity Levels")
         self.label_frame.add_write("Current Level:", FLOWER_AIR_QUALITY_SRV, CURRENT_LEVEL_UUID)
@@ -135,6 +156,8 @@ class RemoteGUI(tk.Tk):
             self.co2_frame.read_params()
             self.tvoc_frame.read_params()
             self.label_frame.read_params()
+            if upload_to_dashboard:
+                upload_info(int(self.co2_current.get()), int(self.tvoc_current.get()))
             self.after(1000, self.parameter_update)
 
 
@@ -151,6 +174,14 @@ class AsyncRead(Thread):
 
 
 TARGET = "f6:f3:69:60:38:74"
+
+if len(sys.argv) > 1:
+    TARGET = sys.argv[1]
+
+upload_to_dashboard = False
+if len(sys.argv) > 2:
+    upload_to_dashboard = True
+
 adapter = simplepyble.Adapter.get_adapters()[0]
 
 print(f"Selected adapter: {adapter.identifier()} [{adapter.address()}]")
@@ -160,9 +191,9 @@ adapter.set_callback_on_scan_stop(lambda: print("Scan complete."))
 adapter.set_callback_on_scan_found(lambda peripheral: print(f"Found {peripheral.identifier()} [{peripheral.address()}]"))
 
 flower_peripheral = None
-# Scan for 3 seconds
+# Scan for 1 second
 while flower_peripheral is None:
-    adapter.scan_for(3000)
+    adapter.scan_for(1000)
     peripherals = adapter.scan_get_results()
     for p in peripherals:
         if p.address() == TARGET:
